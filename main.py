@@ -157,3 +157,125 @@ for hi, lo, count in supChannels2:
 
 longTrades, shortTrades = findSignals(randomCandles, resChannels, supChannels)
 print(f"\nRaw: {len(longTrades)} long + {len(shortTrades)} short signals")
+
+
+# ─── Trade simulation (same as test_orders.py) ───────────────────
+from collections import OrderedDict
+
+def simulate_trade(candles, direction, entry, sl, tps, start):
+    """Walk candles forward. 3 parts (TP1/TP2/TP3), each exits at its TP or SL."""
+    parts = [
+        {"tp_level": 1, "fibo": tps[0][0], "tp": tps[0][1], "closed": False, "exit": None, "exit_candle": None, "hit": None},
+        {"tp_level": 2, "fibo": tps[1][0], "tp": tps[1][1], "closed": False, "exit": None, "exit_candle": None, "hit": None},
+        {"tp_level": 3, "fibo": tps[2][0], "tp": tps[2][1], "closed": False, "exit": None, "exit_candle": None, "hit": None},
+    ]
+    risk = abs(entry - sl)
+
+    for j in range(start + 1, len(candles)):
+        high, low = candles[j][1], candles[j][2]
+        sl_hit = low <= sl if direction == "BUY" else high >= sl
+        if sl_hit:
+            for p in parts:
+                if not p["closed"]:
+                    p["closed"] = True
+                    p["exit"] = round(sl, 4)
+                    p["exit_candle"] = j
+                    p["hit"] = f"SL {p['tp_level']} HIT"
+            break
+        for p in parts:
+            if p["closed"]:
+                continue
+            tp_hit = high >= p["tp"] if direction == "BUY" else low <= p["tp"]
+            if tp_hit:
+                p["closed"] = True
+                p["exit"] = round(p["tp"], 4)
+                p["exit_candle"] = j
+                p["hit"] = f"TP {p['tp_level']} HIT"
+
+    last_close = candles[-1][3]
+    last_idx = len(candles) - 1
+    for p in parts:
+        if not p["closed"]:
+            p["closed"] = True
+            p["exit"] = round(last_close, 4)
+            p["exit_candle"] = last_idx
+            p["hit"] = "NO HIT"
+
+    for p in parts:
+        if p["hit"].startswith("TP"):
+            p["profit"] = round(risk * p["fibo"], 4)
+        elif p["hit"].startswith("SL"):
+            p["profit"] = round(-risk, 4)
+        else:
+            if direction == "BUY":
+                p["profit"] = round(last_close - entry, 4)
+            else:
+                p["profit"] = round(entry - last_close, 4)
+
+    return parts
+
+
+def select_trades(longTrades, shortTrades):
+    """3 trades per direction, each from a different signal candle."""
+    result = []
+    for label, raw in [("BUY", longTrades), ("SELL", shortTrades)]:
+        sigs = OrderedDict()
+        for t in raw:
+            sig_idx = t[4]
+            if sig_idx not in sigs:
+                sigs[sig_idx] = t
+        count = 0
+        for sig_idx, (d, entry, sl, fibo, idx, ch_w) in sigs.items():
+            if count >= 3:
+                break
+            tps = [
+                (0.618, entry + (entry - sl) * 0.618 if d == "BUY" else entry - (sl - entry) * 0.618),
+                (1.618, entry + (entry - sl) * 1.618 if d == "BUY" else entry - (sl - entry) * 1.618),
+                (2.618, entry + (entry - sl) * 2.618 if d == "BUY" else entry - (sl - entry) * 2.618),
+            ]
+            result.append((d, entry, sl, tps, idx))
+            count += 1
+    return result
+
+
+selected = select_trades(longTrades, shortTrades)
+
+trades = []
+for direction, entry, sl, tps, idx in selected:
+    parts = simulate_trade(randomCandles, direction, entry, sl, tps, idx)
+    risk = abs(entry - sl)
+    trades.append({
+        "id": len(trades) + 1,
+        "direction": direction,
+        "entry_candle": idx,
+        "entry": round(entry, 4),
+        "sl": round(sl, 4),
+        "risk": round(risk, 4),
+        "tps": [
+            {"level": 1, "fibo": 0.618, "price": round(tps[0][1], 4)},
+            {"level": 2, "fibo": 1.618, "price": round(tps[1][1], 4)},
+            {"level": 3, "fibo": 2.618, "price": round(tps[2][1], 4)},
+        ],
+        "parts": [
+            {
+                "tp_level": p["tp_level"],
+                "tp": round(p["tp"], 4),
+                "exit": p["exit"],
+                "exit_candle": p["exit_candle"],
+                "hit": p["hit"],
+                "profit": p["profit"],
+            }
+            for p in parts
+        ],
+        "total_profit": round(sum(p["profit"] for p in parts), 4),
+    })
+
+
+print(f"\nTrades: {len(trades)}")
+for t in trades:
+    print(f"\n  #{t['id']} {t['direction']}  entry_candle={t['entry_candle']}  entry={t['entry']:.4f}  sl={t['sl']:.4f}  risk={t['risk']:.4f}")
+    print(f"    TP1(x0.618)={t['tps'][0]['price']:.4f}  TP2(x1.618)={t['tps'][1]['price']:.4f}  TP3(x2.618)={t['tps'][2]['price']:.4f}")
+    for p in t["parts"]:
+        print(f"    Part {p['tp_level']}: tp={p['tp']:.4f}  {p['hit']}  exit={p['exit']}  candle={p['exit_candle']}  profit={'+' if p['profit']>0 else ''}{p['profit']:.4f}")
+    print(f"    TOTAL PROFIT: {'+' if t['total_profit']>0 else ''}{t['total_profit']:.4f}")
+print(f"\nSUM: {'+' if sum(t['total_profit'] for t in trades)>0 else ''}{sum(t['total_profit'] for t in trades):.4f}")
