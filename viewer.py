@@ -110,6 +110,15 @@ for t in trades:
 buy_trades  = [t for t in trades if t["direction"] == "BUY"]
 sell_trades = [t for t in trades if t["direction"] == "SELL"]
 
+df1 = to_df(randomCandles)
+fig1, axes1 = mpf.plot(df1, type='candle', volume=True, style=style,
+    returnfig=True, warn_too_much_data=10000, figsize=(16, 8),
+    title=f'chart 1: ALL {len(randomCandles)} @ 1m - channels')
+n1 = len(df1); x1 = range(n1)
+for hi, lo, cnt in resChannels: axes1[0].fill_between(x1, hi, lo, color='red', alpha=0.15)
+for hi, lo, cnt in supChannels: axes1[0].fill_between(x1, hi, lo, color='green', alpha=0.15)
+fig1.savefig('chart.png', dpi=100, pad_inches=0.4); plt.close(fig1)
+
 df2 = to_df(randomCandles)
 fig2, axes2 = mpf.plot(df2, type='candle', volume=True, style=style,
     returnfig=True, warn_too_much_data=10000, figsize=(16, 8),
@@ -144,6 +153,7 @@ if sell_trades:
     axes4[0].set_xlim(xl, xr); axes4[0].set_ylim(ymin, ymax)
     fig4.savefig('chart_4.png', dpi=100, pad_inches=0.4); plt.close(fig4)
 
+print("chart.png   : 1m all + channels")
 print("chart_2.png : 1m all + all trades")
 if buy_trades: print("chart_3.png : long trades only (zoomed)")
 if sell_trades: print("chart_4.png : short trades only (zoomed)")

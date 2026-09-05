@@ -96,7 +96,7 @@ def generateCandles(count, timeframe, startPrice=20, endPrice=25, offsetRange=0.
         currentPrice = closePrice
     return candles
 
-randomCandles = generateCandles(50, 60) # 1m candles > 5m candles = 5000 candles
+randomCandles = generateCandles(1000, 60) # 1m candles > 5m candles = 5000 candles
 
 def analyzeSR(candles, k=3, widthPercent=0.05):
     resistancePoints, supportPoints = candleSupportResistance(candles, k)
@@ -159,7 +159,6 @@ longTrades, shortTrades = findSignals(randomCandles, resChannels, supChannels)
 print(f"\nRaw: {len(longTrades)} long + {len(shortTrades)} short signals")
 
 
-# ─── Trade simulation (same as test_orders.py) ───────────────────
 from collections import OrderedDict
 
 def simulate_trade(candles, direction, entry, sl, tps, start):
