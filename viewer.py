@@ -117,6 +117,7 @@ fig1, axes1 = mpf.plot(df1, type='candle', volume=True, style=style,
 n1 = len(df1); x1 = range(n1)
 for hi, lo, cnt in resChannels: axes1[0].fill_between(x1, hi, lo, color='red', alpha=0.15)
 for hi, lo, cnt in supChannels: axes1[0].fill_between(x1, hi, lo, color='green', alpha=0.15)
+axes1[0].set_xlim(-1, n1)
 fig1.savefig('chart.png', dpi=100, pad_inches=0.4); plt.close(fig1)
 
 df2 = to_df(randomCandles)
@@ -127,6 +128,7 @@ n2 = len(df2); x2 = range(n2)
 for hi, lo, cnt in resChannels: axes2[0].fill_between(x2, hi, lo, color='red', alpha=0.15)
 for hi, lo, cnt in supChannels: axes2[0].fill_between(x2, hi, lo, color='green', alpha=0.15)
 plot_trades(axes2[0], buy_trades + sell_trades)
+axes2[0].set_xlim(-1, n2)
 fig2.savefig('chart_2.png', dpi=100, pad_inches=0.4); plt.close(fig2)
 
 if buy_trades:
