@@ -196,7 +196,7 @@ def simulate_trade(candles, direction, entry, sl, tps, start):
                     p["closed"] = True
                     p["exit"] = round(sl, 4)
                     p["exit_candle"] = j
-                    p["hit"] = "SL HIT"
+                    p["hit"] = f"SL {p['tp_level']} HIT"
             break
         for p in parts:
             if p["closed"]:
@@ -206,24 +206,29 @@ def simulate_trade(candles, direction, entry, sl, tps, start):
                 p["closed"] = True
                 p["exit"] = round(p["tp"], 4)
                 p["exit_candle"] = j
-                p["hit"] = f"TP{p['tp_level']} HIT"
+                p["hit"] = f"TP {p['tp_level']} HIT"
 
-    # Any part never touched -> mark NONE
+    # Parts never hit: mark-to-market at the last candle's close
+    last_close = candles[-1][3]
+    last_idx = len(candles) - 1
     for p in parts:
         if not p["closed"]:
             p["closed"] = True
-            p["exit"] = None
-            p["exit_candle"] = None
+            p["exit"] = round(last_close, 4)
+            p["exit_candle"] = last_idx
             p["hit"] = "NO HIT"
 
-    # Profit per part: win = risk * fibo, loss = -risk, none = 0
+    # Profit per part: win = risk * fibo, loss = -risk, no-hit = mark-to-market
     for p in parts:
-        if p["hit"] and p["hit"].startswith("TP"):
+        if p["hit"].startswith("TP"):
             p["profit"] = round(risk * p["fibo"], 4)
-        elif p["hit"] == "SL HIT":
+        elif p["hit"].startswith("SL"):
             p["profit"] = round(-risk, 4)
-        else:
-            p["profit"] = 0.0
+        else:  # NO HIT — unrealized, measured from entry to last close
+            if direction == "BUY":
+                p["profit"] = round(last_close - entry, 4)
+            else:
+                p["profit"] = round(entry - last_close, 4)
 
     return parts
 
