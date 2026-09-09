@@ -161,12 +161,14 @@ print(f"\nRaw: {len(longTrades)} long + {len(shortTrades)} short signals")
 
 from collections import OrderedDict
 
-def simulate_trade(candles, direction, entry, tps, start):
+def simulate_trade(candles, direction, entry, tps, start, sl_pct=1.2):
     """Walk candles forward. 3 parts (TP1/TP2/TP3), each 1/3 of the position.
-    ONE SL for all parts, calculated from the first TP: SL distance = TP1 distance.
+    ONE SL for all parts, calculated from the first TP:
+    BUY  SL = TP1 * (1 - 1.2/100)  (1.2% of TP1 below TP1)
+    SELL SL = TP1 * (1 + 1.2/100)  (1.2% of TP1 above TP1)
     Returns (sl, parts)."""
-    sl_dist = abs(tps[0][1] - entry)  # SL sits exactly as far as TP1
-    sl = round(entry - sl_dist, 4) if direction == "BUY" else round(entry + sl_dist, 4)
+    sl = round(tps[0][1] * (1 - sl_pct/100), 4) if direction == "BUY" else round(tps[0][1] * (1 + sl_pct/100), 4)
+    sl_dist = abs(entry - sl)  # actual stop distance
     parts = [
         {"tp_level": 1, "fibo": tps[0][0], "tp": tps[0][1], "closed": False, "exit": None, "exit_candle": None, "hit": None},
         {"tp_level": 2, "fibo": tps[1][0], "tp": tps[1][1], "closed": False, "exit": None, "exit_candle": None, "hit": None},

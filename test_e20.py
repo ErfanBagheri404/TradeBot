@@ -12,7 +12,7 @@ def make_tps(direction):
         (2.618, 20 + sign * UNIT * 2.618),
     ]
 
-print(f"entry=20.00  unit(1.2%)={UNIT:.4f}  SL distance=TP1 distance={UNIT*0.618:.4f}")
+print(f"entry=20.00  unit(1.2%)={UNIT:.4f}  TP1 dist={UNIT*0.618:.4f}  SL = TP1*(1±1.2/100)")
 for d in ("BUY", "SELL"):
     tps = make_tps(d)
     sl, parts = simulate_trade(generateCandles(50, 60, 19.9, 20.1), d, 20.0, tps, 10)
