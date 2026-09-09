@@ -161,7 +161,7 @@ print(f"\nRaw: {len(longTrades)} long + {len(shortTrades)} short signals")
 
 from collections import OrderedDict
 
-def simulate_trade(candles, direction, entry, risk, tps, start):
+def simulate_trade(candles, direction, entry, tps, start):
     """Walk candles forward. 3 parts (TP1/TP2/TP3), each 1/3 of the position.
     ONE SL for all parts, calculated from the first TP: SL distance = TP1 distance.
     Returns (sl, parts)."""
@@ -204,7 +204,7 @@ def simulate_trade(candles, direction, entry, risk, tps, start):
 
     for p in parts:
         if p["hit"].startswith("TP"):
-            p["profit"] = round(risk * p["fibo"], 4)
+            p["profit"] = round(abs(p["tp"] - entry), 4)  # actual TP distance
         elif p["hit"].startswith("SL"):
             p["profit"] = round(-sl_dist, 4)  # every part exits at the single SL
         else:
@@ -230,21 +230,22 @@ def select_trades(longTrades, shortTrades, risk_pct=1.2):
         for sig_idx, (d, entry, fibo, idx, ch_w) in sigs.items():
             if count >= 3:
                 break
-            risk = entry * risk_pct / 100
+            unit = entry * risk_pct / 100  # TP scale only — SL no longer uses it
             tps = [
-                (0.618, entry + risk * 0.618 if d == "BUY" else entry - risk * 0.618),
-                (1.618, entry + risk * 1.618 if d == "BUY" else entry - risk * 1.618),
-                (2.618, entry + risk * 2.618 if d == "BUY" else entry - risk * 2.618),
+                (0.618, entry + unit * 0.618 if d == "BUY" else entry - unit * 0.618),
+                (1.618, entry + unit * 1.618 if d == "BUY" else entry - unit * 1.618),
+                (2.618, entry + unit * 2.618 if d == "BUY" else entry - unit * 2.618),
             ]
-            result.append((d, entry, risk, tps, idx))
+            result.append((d, entry, tps, idx))
             count += 1
     return result
 
 
-def build_trade(candles, direction, entry, risk, tps, idx, trade_id):
+def build_trade(candles, direction, entry, tps, idx, trade_id):
     """Run one trade through simulate_trade and pack the result dict.
     All trade calculation lives here — callers only print."""
-    sl, parts = simulate_trade(candles, direction, entry, risk, tps, idx)
+    sl, parts = simulate_trade(candles, direction, entry, tps, idx)
+    risk = abs(entry - sl)  # actual risk = SL distance = TP1 distance
     return {
         "id": trade_id,
         "direction": direction,
@@ -273,14 +274,14 @@ def build_trade(candles, direction, entry, risk, tps, idx, trade_id):
 
 
 trades = [
-    build_trade(randomCandles, d, entry, risk, tps, idx, i + 1)
-    for i, (d, entry, risk, tps, idx) in enumerate(select_trades(longTrades, shortTrades))
+    build_trade(randomCandles, d, entry, tps, idx, i + 1)
+    for i, (d, entry, tps, idx) in enumerate(select_trades(longTrades, shortTrades))
 ]
 
 
 print(f"\nTrades: {len(trades)}")
 for t in trades:
-    print(f"\n  #{t['id']} {t['direction']}  entry_candle={t['entry_candle']}  entry={t['entry']:.4f}  sl={t['sl']:.4f}  risk(base 1.2%)={t['risk']:.4f}")
+    print(f"\n  #{t['id']} {t['direction']}  entry_candle={t['entry_candle']}  entry={t['entry']:.4f}  sl={t['sl']:.4f}  risk={t['risk']:.4f}")
     print(f"    TP1(x0.618)={t['tps'][0]['price']:.4f}  TP2(x1.618)={t['tps'][1]['price']:.4f}  TP3(x2.618)={t['tps'][2]['price']:.4f}")
     for p in t["parts"]:
         print(f"    Part {p['tp_level']}: tp={p['tp']:.4f}  {p['hit']}  exit={p['exit']}  candle={p['exit_candle']}  profit={'+' if p['profit']>0 else ''}{p['profit']:.4f}")
