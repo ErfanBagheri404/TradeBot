@@ -105,7 +105,9 @@ def analyzeSR(candles, k=3, widthPercent=0.05):
     supChannels = buildChannels(supportPoints, closeWidth)
     return resChannels, supChannels
 
-def findSignals(candles, resChannels, supChannels, risk=1.2):
+def findSignals(candles, resChannels, supChannels):
+    """Signals carry direction, entry, fibo, candle, channel width — no SL.
+    The single SL is derived later from the first TP."""
     longTrades = []
     shortTrades = []
     for i in range(len(candles)):
@@ -113,19 +115,17 @@ def findSignals(candles, resChannels, supChannels, risk=1.2):
             if(candles[i][2] < low and candles[i][3] > low and candles[i][0] > low):
                 entry = high
                 channel_width = high - low
-                sl = entry * (1 - risk/100)
-                longTrades.append(("BUY", entry, sl, 0.618, i, channel_width)) 
-                longTrades.append(("BUY", entry, sl, 1.618, i, channel_width))
-                longTrades.append(("BUY", entry, sl, 2.618, i, channel_width))
+                longTrades.append(("BUY", entry, 0.618, i, channel_width)) 
+                longTrades.append(("BUY", entry, 1.618, i, channel_width))
+                longTrades.append(("BUY", entry, 2.618, i, channel_width))
 
         for high, low, count in resChannels:
             if(candles[i][1] > high and candles[i][3] < high and candles[i][0] < high):
                 entry = low
                 channel_width = high - low
-                sl = entry * (1 + risk/100)
-                shortTrades.append(("SELL", entry, sl, 0.618, i, channel_width))
-                shortTrades.append(("SELL", entry, sl, 1.618, i, channel_width))
-                shortTrades.append(("SELL", entry, sl, 2.618, i, channel_width))
+                shortTrades.append(("SELL", entry, 0.618, i, channel_width))
+                shortTrades.append(("SELL", entry, 1.618, i, channel_width))
+                shortTrades.append(("SELL", entry, 2.618, i, channel_width))
 
     return longTrades, shortTrades
 
@@ -161,35 +161,37 @@ print(f"\nRaw: {len(longTrades)} long + {len(shortTrades)} short signals")
 
 from collections import OrderedDict
 
-def simulate_trade(candles, direction, entry, sl, tps, start):
-    """Walk candles forward. 3 parts (TP1/TP2/TP3), each exits at its TP or SL."""
+def simulate_trade(candles, direction, entry, risk, tps, start):
+    """Walk candles forward. 3 parts (TP1/TP2/TP3), each 1/3 of the position.
+    ONE SL for all parts, calculated from the first TP: SL distance = TP1 distance.
+    Returns (sl, parts)."""
+    sl_dist = abs(tps[0][1] - entry)  # SL sits exactly as far as TP1
+    sl = round(entry - sl_dist, 4) if direction == "BUY" else round(entry + sl_dist, 4)
     parts = [
         {"tp_level": 1, "fibo": tps[0][0], "tp": tps[0][1], "closed": False, "exit": None, "exit_candle": None, "hit": None},
         {"tp_level": 2, "fibo": tps[1][0], "tp": tps[1][1], "closed": False, "exit": None, "exit_candle": None, "hit": None},
         {"tp_level": 3, "fibo": tps[2][0], "tp": tps[2][1], "closed": False, "exit": None, "exit_candle": None, "hit": None},
     ]
-    risk = abs(entry - sl)
 
     for j in range(start + 1, len(candles)):
         high, low = candles[j][1], candles[j][2]
-        sl_hit = low <= sl if direction == "BUY" else high >= sl
-        if sl_hit:
-            for p in parts:
-                if not p["closed"]:
-                    p["closed"] = True
-                    p["exit"] = round(sl, 4)
-                    p["exit_candle"] = j
-                    p["hit"] = f"SL {p['tp_level']} HIT"
-            break
         for p in parts:
             if p["closed"]:
                 continue
+            sl_hit = low <= sl if direction == "BUY" else high >= sl
             tp_hit = high >= p["tp"] if direction == "BUY" else low <= p["tp"]
-            if tp_hit:
+            if sl_hit:  # same-candle tie: SL wins (pessimistic)
+                p["closed"] = True
+                p["exit"] = sl
+                p["exit_candle"] = j
+                p["hit"] = f"SL {p['tp_level']} HIT"
+            elif tp_hit:
                 p["closed"] = True
                 p["exit"] = round(p["tp"], 4)
                 p["exit_candle"] = j
                 p["hit"] = f"TP {p['tp_level']} HIT"
+        if all(p["closed"] for p in parts):
+            break
 
     last_close = candles[-1][3]
     last_idx = len(candles) - 1
@@ -204,47 +206,47 @@ def simulate_trade(candles, direction, entry, sl, tps, start):
         if p["hit"].startswith("TP"):
             p["profit"] = round(risk * p["fibo"], 4)
         elif p["hit"].startswith("SL"):
-            p["profit"] = round(-risk, 4)
+            p["profit"] = round(-sl_dist, 4)  # every part exits at the single SL
         else:
             if direction == "BUY":
                 p["profit"] = round(last_close - entry, 4)
             else:
                 p["profit"] = round(entry - last_close, 4)
 
-    return parts
+    return sl, parts
 
 
-def select_trades(longTrades, shortTrades):
-    """3 trades per direction, each from a different signal candle."""
+def select_trades(longTrades, shortTrades, risk_pct=1.2):
+    """3 trades per direction, each from a different signal candle.
+    Builds base risk (1.2% of entry) and the 3 fibo TPs here."""
     result = []
     for label, raw in [("BUY", longTrades), ("SELL", shortTrades)]:
         sigs = OrderedDict()
         for t in raw:
-            sig_idx = t[4]
+            sig_idx = t[3]
             if sig_idx not in sigs:
                 sigs[sig_idx] = t
         count = 0
-        for sig_idx, (d, entry, sl, fibo, idx, ch_w) in sigs.items():
+        for sig_idx, (d, entry, fibo, idx, ch_w) in sigs.items():
             if count >= 3:
                 break
+            risk = entry * risk_pct / 100
             tps = [
-                (0.618, entry + (entry - sl) * 0.618 if d == "BUY" else entry - (sl - entry) * 0.618),  
-                (1.618, entry + (entry - sl) * 1.618 if d == "BUY" else entry - (sl - entry) * 1.618),
-                (2.618, entry + (entry - sl) * 2.618 if d == "BUY" else entry - (sl - entry) * 2.618),
+                (0.618, entry + risk * 0.618 if d == "BUY" else entry - risk * 0.618),
+                (1.618, entry + risk * 1.618 if d == "BUY" else entry - risk * 1.618),
+                (2.618, entry + risk * 2.618 if d == "BUY" else entry - risk * 2.618),
             ]
-            result.append((d, entry, sl, tps, idx))
+            result.append((d, entry, risk, tps, idx))
             count += 1
     return result
 
 
-selected = select_trades(longTrades, shortTrades)
-
-trades = []
-for direction, entry, sl, tps, idx in selected:
-    parts = simulate_trade(randomCandles, direction, entry, sl, tps, idx)
-    risk = abs(entry - sl)
-    trades.append({
-        "id": len(trades) + 1,
+def build_trade(candles, direction, entry, risk, tps, idx, trade_id):
+    """Run one trade through simulate_trade and pack the result dict.
+    All trade calculation lives here — callers only print."""
+    sl, parts = simulate_trade(candles, direction, entry, risk, tps, idx)
+    return {
+        "id": trade_id,
         "direction": direction,
         "entry_candle": idx,
         "entry": round(entry, 4),
@@ -267,12 +269,18 @@ for direction, entry, sl, tps, idx in selected:
             for p in parts
         ],
         "total_profit": round(sum(p["profit"] for p in parts), 4),
-    })
+    }
+
+
+trades = [
+    build_trade(randomCandles, d, entry, risk, tps, idx, i + 1)
+    for i, (d, entry, risk, tps, idx) in enumerate(select_trades(longTrades, shortTrades))
+]
 
 
 print(f"\nTrades: {len(trades)}")
 for t in trades:
-    print(f"\n  #{t['id']} {t['direction']}  entry_candle={t['entry_candle']}  entry={t['entry']:.4f}  sl={t['sl']:.4f}  risk={t['risk']:.4f}")
+    print(f"\n  #{t['id']} {t['direction']}  entry_candle={t['entry_candle']}  entry={t['entry']:.4f}  sl={t['sl']:.4f}  risk(base 1.2%)={t['risk']:.4f}")
     print(f"    TP1(x0.618)={t['tps'][0]['price']:.4f}  TP2(x1.618)={t['tps'][1]['price']:.4f}  TP3(x2.618)={t['tps'][2]['price']:.4f}")
     for p in t["parts"]:
         print(f"    Part {p['tp_level']}: tp={p['tp']:.4f}  {p['hit']}  exit={p['exit']}  candle={p['exit_candle']}  profit={'+' if p['profit']>0 else ''}{p['profit']:.4f}")
