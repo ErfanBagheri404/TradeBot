@@ -1,2 +1,11 @@
 __pycache__/
 *.pyc
+
+# images / chart output
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.bmp
+*.tiff
